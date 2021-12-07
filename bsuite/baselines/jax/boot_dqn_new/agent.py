@@ -85,10 +85,6 @@ class BootstrappedDqn(base.Agent):
     # Transform the (impure) network into a pure function.
     network = hk.without_apply_rng(hk.transform(network, apply_rng=True))
 
-    # Define the output of the network
-    def network_output(params: hk.Params, obs: jnp.ndarray) -> jnp.ndarray:
-      return network.apply(params, obs)
-
     # Define loss function, including bootstrap mask `m_t` & reward noise `z_t`.
     def loss(params: hk.Params, target_params: hk.Params,
              transitions: Sequence[jnp.ndarray]) -> jnp.ndarray:
@@ -106,12 +102,22 @@ class BootstrappedDqn(base.Agent):
       single_jacobian = jax.vmap(jax.jacrev(network_out))
       jacobians = single_jacobian(o_tm1)
       penalty = jnp.sum(jacobians**2)
-
-      # print some logs:
-      print("SQUARED TD ERROR:", mean_square_td_error)
-      print("WEIGHTED PENALTY:", penalty_weight * penalty)
       
       return mean_square_td_error + penalty_weight * penalty
+
+    # Define penalty function
+    def penalty_term(params: hk.Params, 
+                     transitions: Sequence[jnp.ndarray]) -> jnp.ndarray:
+      """Penalize the gradient wrt state space."""
+      o_tm1, _, _, _, _, _, _ = transitions
+
+      # penalty term
+      network_out = lambda x: network.apply(params, jnp.array([x]))
+      single_jacobian = jax.vmap(jax.jacrev(network_out))
+      jacobians = single_jacobian(o_tm1)
+      penalty = jnp.sum(jacobians**2)
+
+      return penalty
 
     # Define update function for each member of ensemble..
     @jax.jit
@@ -119,7 +125,9 @@ class BootstrappedDqn(base.Agent):
                  transitions: Sequence[jnp.ndarray]) -> TrainingState:
       """Does a step of SGD for the whole ensemble over `transitions`."""
 
-      gradients = jax.grad(loss)(state.params, state.target_params, transitions)
+      value_loss, gradient_loss = jax.value_and_grad(loss)(state.params, state.target_params, transitions)
+      value_penalty, gradient_penalty = jax.value_and_grad(penalty_term)(state.params, transitions)
+      gradients = gradient_loss + gradient_penalty * penalty_weight
       updates, new_opt_state = optimizer.update(gradients, state.opt_state)
       new_params = optax.apply_updates(state.params, updates)
 
@@ -127,7 +135,7 @@ class BootstrappedDqn(base.Agent):
           params=new_params,
           target_params=state.target_params,
           opt_state=new_opt_state,
-          step=state.step + 1)
+          step=state.step + 1), value_loss, value_penalty
 
     # Initialize parameters and optimizer state for an ensemble of Q-networks.
     rng = hk.PRNGSequence(seed)
@@ -214,7 +222,9 @@ class BootstrappedDqn(base.Agent):
       o_tm1, a_tm1, r_t, d_t, o_t, m_t, z_t = transitions
       for k, state in enumerate(self._ensemble):
         transitions = [o_tm1, a_tm1, r_t, d_t, o_t, m_t[:, k], z_t[:, k]]
-        self._ensemble[k] = self._sgd_step(state, transitions)
+        self._ensemble[k], value_loss, value_penalty = self._sgd_step(state, transitions)
+        print("LOSS:", value_loss)
+        print("PENALTY:", value_penalty)
 
     # Periodically update target parameters.
     for k, state in enumerate(self._ensemble):
