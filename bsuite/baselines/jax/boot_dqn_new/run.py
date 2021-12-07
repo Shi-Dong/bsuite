@@ -58,6 +58,9 @@ FLAGS = flags.FLAGS
 lite_experiments = {
     'DEEP_SEA_LITE': ['deep_sea/0', 'deep_sea/5', 'deep_sea/10', 'deep_sea/15'],
     'CARTPOLE_SWINGUP_LITE': ['cartpole_swingup/0', 'cartpole_swingup/5', 'cartpole_swingup/10', 'cartpole_swingup/15'],
+    'MOUNTAIN_CAR_NOISE_LITE': ['mountain_car_noise/0', 'mountain_car_noise/5', 'mountain_car_noise/10', 'mountain_car_noise/15'],
+    'MNIST_NOISE_LITE': ['mnist_noise/0', 'mnist_noise/5', 'mnist_noise/10', 'mnist_noise/15'],
+    'UMBRELLA_DISTRACT_LITE': ['umbrella_distract/0', 'umbrella_distract/5', 'umbrella_distract/10', 'umbrella_distract/15', 'umbrella_distract/20'],
 }
 
 

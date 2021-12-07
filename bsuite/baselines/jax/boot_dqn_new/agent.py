@@ -103,7 +103,7 @@ class BootstrappedDqn(base.Agent):
 
       # penalty term
       network_out = lambda x: network.apply(params, jnp.array([x]))
-      single_jacobian = jax.vmap(jax.jacfwd(network_out))
+      single_jacobian = jax.vmap(jax.jacrev(network_out))
       jacobians = single_jacobian(o_tm1)
       penalty = jnp.sum(jacobians**2)
 
