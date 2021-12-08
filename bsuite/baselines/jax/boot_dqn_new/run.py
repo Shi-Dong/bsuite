@@ -51,6 +51,7 @@ flags.DEFINE_float('penalty_weight', 0.01, 'the weight given to the gradient pen
 flags.DEFINE_boolean('disable_jit', False, 'whether jit is disabled for debugging')
 flags.DEFINE_integer('num_processes', 1, 'number of parellel processes')
 flags.DEFINE_boolean('parellel', False, 'using concurrent.futures to enable parellelization')
+flags.DEFINE_float('learning_rate', 0.001, 'the learning rate of the optimizer')
 
 FLAGS = flags.FLAGS
 
@@ -85,7 +86,7 @@ def run(bsuite_id: str) -> str:
     x = hk.Flatten()(inputs)
     return net(x) + prior_scale * lax.stop_gradient(prior_net(x))
 
-  optimizer = optax.adam(learning_rate=1e-3)
+  optimizer = optax.adam(learning_rate=FLAGS.learning_rate)
 
   agent = BootstrappedDqn(
       obs_spec=env.observation_spec(),

@@ -49,6 +49,8 @@ import numpy as np
 import optax
 import rlax
 
+import sys
+
 
 class TrainingState(NamedTuple):
   params: hk.Params
@@ -103,7 +105,7 @@ class BootstrappedDqn(base.Agent):
       jacobians = single_jacobian(o_tm1)
       penalty = jnp.sum(jacobians**2)
       
-      return mean_square_td_error + penalty_weight * penalty
+      return mean_square_td_error 
 
     # Define penalty function
     def penalty_term(params: hk.Params, 
@@ -125,9 +127,10 @@ class BootstrappedDqn(base.Agent):
                  transitions: Sequence[jnp.ndarray]) -> TrainingState:
       """Does a step of SGD for the whole ensemble over `transitions`."""
 
-      value_loss, gradient_loss = jax.value_and_grad(loss)(state.params, state.target_params, transitions)
-      value_penalty, gradient_penalty = jax.value_and_grad(penalty_term)(state.params, transitions)
-      gradients = gradient_loss + gradient_penalty * penalty_weight
+      total_loss = lambda x, y, z: loss(x, y, z) + penalty_term(x, z) * penalty_weight
+      gradients = jax.grad(total_loss)(state.params, state.target_params, transitions)
+      value_loss = loss(state.params, state.target_params, transitions)
+      value_penalty = penalty_term(state.params, transitions)  # unweighted penalty
       updates, new_opt_state = optimizer.update(gradients, state.opt_state)
       new_params = optax.apply_updates(state.params, updates)
 
@@ -167,10 +170,13 @@ class BootstrappedDqn(base.Agent):
     self._min_replay_size = min_replay_size
     self._epsilon_fn = epsilon_fn
     self._mask_prob = mask_prob
+    self._penalty_weight = penalty_weight
 
     # Agent state.
     self._active_head = self._ensemble[0]
     self._total_steps = 0
+    self._value_loss = 0.0
+    self._value_penalty = 0.0
 
   def select_action(self, timestep: dm_env.TimeStep) -> base.Action:
     """Select values via Thompson sampling, then use epsilon-greedy policy."""
@@ -197,6 +203,12 @@ class BootstrappedDqn(base.Agent):
       k = np.random.randint(self._num_ensemble)
       self._active_head = self._ensemble[k]
 
+      # print loss in each episode to stderr
+      print("\nORIGINAL LOSS:", self._value_loss, "|",
+            "UNWEIGHTED PENALTY:", self._value_penalty, "|",
+            "TOTAL LOSS:", self._value_loss + self._penalty_weight * self._value_penalty, "\n",
+            file=sys.stderr)
+
     # Generate bootstrapping mask & reward noise.
     mask = np.random.binomial(1, self._mask_prob, self._num_ensemble)
     noise = np.random.randn(self._num_ensemble)
@@ -222,15 +234,12 @@ class BootstrappedDqn(base.Agent):
       o_tm1, a_tm1, r_t, d_t, o_t, m_t, z_t = transitions
       for k, state in enumerate(self._ensemble):
         transitions = [o_tm1, a_tm1, r_t, d_t, o_t, m_t[:, k], z_t[:, k]]
-        self._ensemble[k], value_loss, value_penalty = self._sgd_step(state, transitions)
-        print("LOSS:", value_loss)
-        print("PENALTY:", value_penalty)
+        self._ensemble[k], self._value_loss, self._value_penalty = self._sgd_step(state, transitions)
 
     # Periodically update target parameters.
     for k, state in enumerate(self._ensemble):
       if state.step % self._target_update_period == 0:
         self._ensemble[k] = state._replace(target_params=state.params)
-
 
 def default_agent(
     obs_spec: specs.Array,
