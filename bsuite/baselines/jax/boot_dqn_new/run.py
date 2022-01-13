@@ -20,6 +20,7 @@ from absl import app
 from absl import flags
 
 import os
+import sys
 import bsuite
 from bsuite import sweep
 
@@ -52,6 +53,7 @@ flags.DEFINE_boolean('disable_jit', False, 'whether jit is disabled for debuggin
 flags.DEFINE_integer('num_processes', 1, 'number of parellel processes')
 flags.DEFINE_boolean('parellel', False, 'using concurrent.futures to enable parellelization')
 flags.DEFINE_float('learning_rate', 0.001, 'the learning rate of the optimizer')
+flags.DEFINE_integer('target_update_period', 40, 'episodes between target network updates')
 
 FLAGS = flags.FLAGS
 
@@ -99,7 +101,7 @@ def run(bsuite_id: str) -> str:
       replay_capacity=10000,
       min_replay_size=128,
       sgd_period=1,
-      target_update_period=4,
+      target_update_period=FLAGS.target_update_period,
       mask_prob=1.0,
       noise_scale=0.,
       penalty_weight=FLAGS.penalty_weight,
@@ -121,6 +123,15 @@ def main(_):
 
   # Set jax GPU memory limit
   os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '.40'
+
+  # Print the experiment config to stderr
+  info_str = (f'EXPERIMENT INFORMATION:\n'
+              f'bsuite_id: {FLAGS.bsuite_id}\n'
+              f'num_ensemble: {FLAGS.num_ensemble}\n'
+              f'penalty_weight: {FLAGS.penalty_weight}\n'
+              f'learning_rate: {FLAGS.learning_rate}\n'
+              f'result directory: {FLAGS.save_path}\n')
+  print(info_str, file=sys.stderr)
 
   if FLAGS.disable_jit:
     config.update('jax_disable_jit', True)
