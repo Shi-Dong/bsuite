@@ -54,12 +54,14 @@ flags.DEFINE_integer('num_processes', 1, 'number of parellel processes')
 flags.DEFINE_boolean('parellel', False, 'using concurrent.futures to enable parellelization')
 flags.DEFINE_float('learning_rate', 0.001, 'the learning rate of the optimizer')
 flags.DEFINE_integer('target_update_period', 40, 'episodes between target network updates')
+flags.DEFINE_boolean('cpu', False, 'use only cpu')
 
 FLAGS = flags.FLAGS
 
 # Define the lite experiments
 lite_experiments = {
     'DEEP_SEA_LITE': ['deep_sea/0', 'deep_sea/5', 'deep_sea/10', 'deep_sea/15'],
+    'DEEP_SEA_STOCHASTIC_LITE': ['deep_sea_stochastic/0', 'deep_sea_stochastic/5', 'deep_sea_stochastic/10', 'deep_sea_stochastic/15'],
     'CARTPOLE_SWINGUP_LITE': ['cartpole_swingup/0', 'cartpole_swingup/5', 'cartpole_swingup/10', 'cartpole_swingup/15'],
     'MOUNTAIN_CAR_NOISE_LITE': ['mountain_car_noise/0', 'mountain_car_noise/5', 'mountain_car_noise/10', 'mountain_car_noise/15'],
     'MNIST_NOISE_LITE': ['mnist_noise/0', 'mnist_noise/5', 'mnist_noise/10', 'mnist_noise/15'],
@@ -132,6 +134,10 @@ def main(_):
               f'learning_rate: {FLAGS.learning_rate}\n'
               f'result directory: {FLAGS.save_path}\n')
   print(info_str, file=sys.stderr)
+
+  if FLAGS.cpu:
+    config.update('jax_platform_name', 'cpu')
+    print('USE ONLY CPU', file=sys.stderr)
 
   if FLAGS.disable_jit:
     config.update('jax_disable_jit', True)

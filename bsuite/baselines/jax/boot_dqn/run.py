@@ -16,6 +16,8 @@
 # ============================================================================
 """Run a Dqn agent instance (using JAX) on a bsuite experiment."""
 
+import os
+import sys
 from absl import app
 from absl import flags
 
@@ -28,6 +30,7 @@ from bsuite.baselines.utils import pool
 
 import haiku as hk
 from jax import lax
+from jax.config import config
 import jax.numpy as jnp
 import optax
 
@@ -45,8 +48,24 @@ flags.DEFINE_enum('logging_mode', 'csv', ['csv', 'sqlite', 'terminal'],
 flags.DEFINE_boolean('overwrite', False, 'overwrite csv logging if found')
 flags.DEFINE_integer('num_episodes', None, 'Number of episodes to run for.')
 flags.DEFINE_boolean('verbose', True, 'whether to log to std output')
+flags.DEFINE_boolean('disable_jit', False, 'whether jit is disabled for debugging')
+flags.DEFINE_boolean('parellel', False, 'using concurrent.futures to enable parellelization')
+flags.DEFINE_boolean('cpu', False, 'use only cpu')
 
 FLAGS = flags.FLAGS
+
+# Define the lite experiments
+lite_experiments = {
+    'DEEP_SEA_LITE': ['deep_sea/0', 'deep_sea/5', 'deep_sea/10', 'deep_sea/15'],
+    'DEEP_SEA_STOCHASTIC_LITE': ['deep_sea_stochastic/0', 'deep_sea_stochastic/5', 'deep_sea_stochastic/10', 'deep_sea_stochastic/15'],
+    'CARTPOLE_SWINGUP_LITE': ['cartpole_swingup/0', 'cartpole_swingup/5', 'cartpole_swingup/10', 'cartpole_swingup/15\
+'],
+    'MOUNTAIN_CAR_NOISE_LITE': ['mountain_car_noise/0', 'mountain_car_noise/5', 'mountain_car_noise/10', 'mountain_ca\
+r_noise/15'],
+    'MNIST_NOISE_LITE': ['mnist_noise/0', 'mnist_noise/5', 'mnist_noise/10', 'mnist_noise/15'],
+    'UMBRELLA_DISTRACT_LITE': ['umbrella_distract/0', 'umbrella_distract/5', 'umbrella_distract/10', 'umbrella_distra\
+ct/15', 'umbrella_distract/20'],
+}
 
 
 def run(bsuite_id: str) -> str:
@@ -102,19 +121,45 @@ def main(_):
   # Parses whether to run a single bsuite_id, or multiprocess sweep.
   bsuite_id = FLAGS.bsuite_id
 
+  # Set jax GPU memory limit
+  os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '.40'
+
+  # Print the experiment config to stderr
+  info_str = (f'EXPERIMENT INFORMATION:\n'
+              f'BASELINE EXPERIMENT\n'
+              f'bsuite_id: {FLAGS.bsuite_id}\n'
+              f'num_ensemble: {FLAGS.num_ensemble}\n'
+              f'result directory: {FLAGS.save_path}\n')
+  print(info_str, file=sys.stderr)
+
+  if FLAGS.cpu:
+    config.update('jax_platform_name', 'cpu')
+    print('USE ONLY CPU', file=sys.stderr)
+
+  if FLAGS.disable_jit:
+    config.update('jax_disable_jit', True)
+
   if bsuite_id in sweep.SWEEP:
     print(f'Running single experiment: bsuite_id={bsuite_id}.')
     run(bsuite_id)
 
-  elif hasattr(sweep, bsuite_id):
-    bsuite_sweep = getattr(sweep, bsuite_id)
-    print(f'Running sweep over bsuite_id in sweep.{bsuite_sweep}')
-    FLAGS.verbose = False
-    pool.map_mpi(run, bsuite_sweep)
+  elif hasattr(sweep, bsuite_id) or bsuite_id in lite_experiments.keys():
+    if hasattr(sweep, bsuite_id):
+      bsuite_sweep = getattr(sweep, bsuite_id)
+    else:
+      bsuite_sweep = lite_experiments[bsuite_id]
+
+    # FLAGS.verbose = False
+    if FLAGS.parellel:
+      print(f'Running sweep over bsuite_id in sweep.{bsuite_sweep}')
+      pool.map_mpi(run, bsuite_sweep, num_processes=FLAGS.num_processes)
+    else:
+      for bsuite_id in bsuite_sweep:
+        print(f'Running single experiment: bsuite_id={bsuite_id}.')
+        run(bsuite_id)
 
   else:
     raise ValueError(f'Invalid flag: bsuite_id={bsuite_id}.')
-
 
 if __name__ == '__main__':
   app.run(main)
